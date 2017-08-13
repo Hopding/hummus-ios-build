@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# Work in current directory
+cd $(dirname "$0")
+
+# Variables
+WORKSPACE="$(pwd)/workspace"
+SRC="$(pwd)/PDFWriter3_6"
+OUT="$(pwd)/out"
+LIBS=(PDFWriter FreeType LibJpeg LibTiff ZLib)
+TARGETS=(i386 x86_64 arm64 armv7 armv7s)
+
+# Ye olde functionz
+function makeWorkspace {
+  rm -rf "$WORKSPACE"
+  mkdir "$WORKSPACE" &&
+  mkdir "$WORKSPACE/build" &&
+  cp -r "$SRC/." "$WORKSPACE/"
+}
+
+function makeOut {
+  rm -rf "$OUT" &&
+  mkdir "$OUT" &&
+  for LIB in "${LIBS[@]}"; do
+    mkdir "$OUT/$LIB"
+    for TARGET in "${TARGETS[@]}"; do
+      mkdir "$OUT/$LIB/$TARGET"
+    done
+  done
+  mkdir "$OUT/PDFWriter/include"
+}
+
+function harvestHeaders {
+  find "$WORKSPACE/PDFWriter" -name \*.h -exec cp {} "$OUT/PDFWriter/include" \;
+}
+
+function buildXCodeProj {
+  cd "$WORKSPACE/build" &&
+  cmake -GXcode ..
+}
+
+# $1 == sdk (iphoneos || iphonesimulator), $2 == ARCHS
+function buildStaticLib {
+  PROJECT="$WORKSPACE/build/PDFHUMMUS.xcodeproj"
+  # https://stackoverflow.com/a/20516805
+  xcodebuild                         \
+    -project "$PROJECT"              \
+    -configuration 'Debug'           \
+    -sdk "$1"                        \
+    clean build                      \
+    ONLY_ACTIVE_ARCH=NO              \
+    ARCHS="$2"                       \
+    IPHONEOS_DEPLOYMENT_TARGET='9.3' \
+    TARGET_BUILD_DIR='./build-arm'   \
+    BUILT_PRODUCTS_DIR='./build-arm'
+}
+
+function harvestStaticLib {
+  cd "$WORKSPACE/build-arm" &&
+  cp ./libPDFWriter.a "$OUT/PDFWriter/$1"
+  cp ./libFreeType.a  "$OUT/FreeType/$1"
+  cp ./libLibJpeg.a   "$OUT/LibJpeg/$1"
+  cp ./libLibTiff.a   "$OUT/LibTiff/$1"
+  cp ./libZlib.a      "$OUT/ZLib/$1"
+}
+
+function buildAndHarvestStaticLibs {
+  makeWorkspace &&
+  buildXCodeProj
+  for TARGET in "${TARGETS[@]}"; do
+    SDK="iphoneos"
+    if [[ "$TARGET" == i386 || "$TARGET" == x86_64 ]]; then
+      SDK="iphonesimulator"
+    fi
+    buildStaticLib "$SDK" "$TARGET" &&
+    harvestStaticLib "$TARGET"
+  done
+}
+
+function buildUniversalLib {
+  cd "$OUT" &&
+  for LIB in "${LIBS[@]}"; do
+    rm -rf "./$LIB/universal" &&
+    mkdir "./$LIB/universal" &&
+    if [[ "$LIB" == ZLib ]]; then
+      # Have to make the second "L" lowercase...
+      lipo -create                 \
+        "./$LIB/arm64/libZlib.a"   \
+        "./$LIB/armv7/libZlib.a"   \
+        "./$LIB/armv7s/libZlib.a"  \
+        "./$LIB/i386/libZlib.a"    \
+        "./$LIB/x86_64/libZlib.a"  \
+        -output "./$LIB/universal/libZlib.a"
+    else
+      lipo -create                 \
+        "./$LIB/arm64/lib$LIB.a"   \
+        "./$LIB/armv7/lib$LIB.a"   \
+        "./$LIB/armv7s/lib$LIB.a"  \
+        "./$LIB/i386/lib$LIB.a"    \
+        "./$LIB/x86_64/lib$LIB.a"  \
+        -output "./$LIB/universal/lib$LIB.a"
+    fi
+  done
+}
+
+# Executable section
+makeOut &&
+buildAndHarvestStaticLibs &&
+buildUniversalLib &&
+harvestHeaders
+
+# makeWorkspace && buildXCodeProj && buildStaticLib && harvestStaticLib arm64
