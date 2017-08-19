@@ -45,7 +45,7 @@ function buildStaticLib {
   # https://stackoverflow.com/a/20516805
   xcodebuild                         \
     -project "$PROJECT"              \
-    -configuration 'Debug'           \
+    -configuration 'Release'         \
     -sdk "$1"                        \
     clean build                      \
     ONLY_ACTIVE_ARCH=NO              \
