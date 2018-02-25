@@ -1,5 +1,6 @@
 project(PDFHUMMUS)
 cmake_minimum_required (VERSION 2.6)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fembed-bitcode")
 
 if(NOT PDFHUMMUS_NO_DCT)
 	ADD_SUBDIRECTORY(LibJpeg)
